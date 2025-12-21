@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <Keypad.h>
 // Magic Numbers
-const int ONE_SECOND = 1000;
-const int HALF_SECOND = 500;
+const unsigned long ONE_SECOND = 1000;
+const unsigned long HALF_SECOND = 500;
 
 // Motor Initialization
 const int motorPin = 4;
@@ -42,21 +42,19 @@ const int startPin = 18;
 int startLastState = LOW;
 int startCurrentState;
 unsigned long lastStartPress = 0;
-boolean startButtonPressed = (startCurrentState == LOW && startLastState == HIGH);
 
 const int clearPin = 19;
 int clearLastState = LOW;
 int clearCurrentState;
 unsigned long lastClearPress = 0;
-boolean clearButtonPressed = (clearCurrentState == LOW && clearLastState == HIGH);
 
 // Timer/Delay Logic
 unsigned long lastSecondUpdate = 0;
-void updateTimestamp(unsigned long timestamp) {
-  timestamp = millis();
+unsigned long updateTimestamp() {
+  return millis();
 }
 
-boolean amountOfSecondsElapsed(int timestamp) {
+unsigned long amountOfMsElapsed(int timestamp) {
   return millis() - timestamp;
 }
 
@@ -74,24 +72,28 @@ void loop() {
   startCurrentState = digitalRead(startPin);
   clearCurrentState = digitalRead(clearPin);
 
+  boolean startButtonPressed = (startCurrentState == LOW && startLastState == HIGH);
+  boolean clearButtonPressed = (clearCurrentState == LOW && clearLastState == HIGH);
+
+
    if (!keypadInUse) {
     if (startButtonPressed) {
-      if (amountOfSecondsElapsed(lastStartPress) > HALF_SECOND) {
+      if (amountOfMsElapsed(lastStartPress) > HALF_SECOND) {
         if (!motorIsRunning) {
           timer = (displayedInput.toInt() / 100) * 60 + (displayedInput.toInt() % 100);
           Serial.println("Timer is: " + String(timer));
           if (timer > 0) {
             displayedInput = String(min(displayedInput.toInt(), 9959L));
             turnMotorOn();
-            updateTimestamp(lastSecondUpdate);
+            lastSecondUpdate = updateTimestamp();
           }
         }
-        updateTimestamp(lastStartPress);
+        lastStartPress = updateTimestamp();
       }
     }
 
     if (clearButtonPressed) {
-      if (amountOfSecondsElapsed(lastClearPress) > HALF_SECOND) {
+      if (amountOfMsElapsed(lastClearPress) > HALF_SECOND) {
         if (!motorIsRunning) {
             timer = 0;
             displayedInput = "";
@@ -104,7 +106,7 @@ void loop() {
               Serial.println("Timer stopped: " + String(timer));
             }
 
-        lastClearPress = millis();
+        lastClearPress = updateTimestamp();
 
       }
     }
@@ -113,8 +115,8 @@ void loop() {
     clearLastState = clearCurrentState;
 
   if (motorIsRunning && timer > 0) {
-    if (amountOfSecondsElapsed(lastSecondUpdate) >= ONE_SECOND) {
-      updateTimestamp(lastSecondUpdate);
+    if (amountOfMsElapsed(lastSecondUpdate) >= ONE_SECOND) {
+      lastSecondUpdate = updateTimestamp();
       timer--;
 
       Serial.print("Time remaining: ");
