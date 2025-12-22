@@ -4,6 +4,9 @@
 const unsigned long ONE_SECOND = 1000;
 const unsigned long HALF_SECOND = 500;
 
+// LED Initialization
+const int LEDPin = 14;
+
 // Motor Initialization
 const int motorPin = 4;
 bool motorIsRunning = false;
@@ -11,11 +14,13 @@ bool motorIsRunning = false;
 void turnMotorOn() {
   digitalWrite(motorPin, HIGH);
   motorIsRunning = true;
+  digitalWrite(LEDPin, HIGH);
 }
 
 void turnMotorOff() {
   digitalWrite(motorPin, LOW);
   motorIsRunning = false;
+  digitalWrite(LEDPin, LOW);
 }
 
 // KeyPad Initialization
@@ -62,11 +67,12 @@ void setup()
 {
   Serial.begin(115200); 
   pinMode(motorPin, OUTPUT);
+  pinMode(LEDPin, OUTPUT);
   pinMode(startPin, INPUT_PULLUP);
   pinMode(clearPin, INPUT_PULLUP);
   digitalWrite(motorPin, LOW); // motor off by default
+  digitalWrite(LEDPin, LOW);
 }
-
 
 void loop() {
   startCurrentState = digitalRead(startPin);
