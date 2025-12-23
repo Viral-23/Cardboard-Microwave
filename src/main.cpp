@@ -1,18 +1,99 @@
 #include <Arduino.h>
 #include <Keypad.h>
 #include <TM1637Display.h>
+#include "DFRobotDFPlayerMini.h"
 #include <WiFi.h>
 #include <time.h>
 #include "secrets.h"
+
+const int latchPin = 5;
+bool doorOpen = true;
+bool lastButtonState = HIGH; 
+
+void updateDoorButton() {
+  bool currentState = digitalRead(latchPin);
+
+  if (currentState != lastButtonState) {
+
+    if (currentState == HIGH) {
+      doorOpen = true;
+      Serial.println("Door UP (open)");
+    } else {
+      doorOpen = false;
+      Serial.println("Door DOWN (closed)");
+    }
+
+    lastButtonState = currentState;
+  }
+}
+
+const int RX_PIN = 16;
+const int TX_PIN = 17;
+const int DFP_BAUD = 9600;
+
+HardwareSerial DFPSerial(2); // UART2
+DFRobotDFPlayerMini myDFPlayer;
+
+void dfplayerTest() {
+  DFPSerial.begin(DFP_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
+  delay(1000); 
+
+  Serial.println();
+  Serial.println("DFPlayer Mini Test - ESP32");
+  Serial.println("Initializing DFPlayer...");
+
+  if (!myDFPlayer.begin(DFPSerial, true, true)) {
+    Serial.println("Unable to begin DFPlayer!");
+    Serial.println("1. Check wiring.");
+    Serial.println("2. Make sure SD card is inserted.");
+      while(true){
+        delay(0); // Code to compatible with ESP8266 watch dog.
+    }  
+  }
+
+  Serial.println("DFPlayer Mini online.");
+  myDFPlayer.volume(20); 
+}
 
 // Magic Numbers
 const unsigned long ONE_SECOND = 1000;
 const unsigned long HALF_SECOND = 500;
 const unsigned long ONE_MINUTE = 60000;
 const unsigned long FIVE_SECOND = 5000;
-
 const int DISPLAY_BRIGHTNESS = 2;
-uint8_t data[] = {0x00, 0x00, 0x00, 0x00};
+
+// Sound Initialization
+const int BEEP = 4;
+const int STATIC = 2;
+const int STATIC_LOOP = 3;
+const int DONE_BEEP = 1;
+const int VOLUME_BEEP   = 10;
+const int VOLUME_STATIC = 20;
+int currentVolume = 0;
+
+void setVolume(int vol) {
+  if (currentVolume != vol) {
+    myDFPlayer.volume(vol);
+    currentVolume = vol;
+  }
+}
+
+void beep() {
+  // setVolume(VOLUME_BEEP);
+  myDFPlayer.play(BEEP);
+}
+
+void playDoneNoise() {
+  // setVolume(VOLUME_BEEP);
+  myDFPlayer.play(DONE_BEEP);
+}
+
+void playStatic() {
+  // setVolume(VOLUME_STATIC);
+  myDFPlayer.loop(STATIC);
+}
+
+
 
 // Timer Display Initialization
 const int CLKPin = 32;
@@ -21,7 +102,7 @@ TM1637Display display(CLKPin, DIOPin);
 const uint8_t COLON_ON = 0b01000000;
 const char* TZ_EST = "EST5EDT,M3.2.0/2,M11.1.0/2";
 unsigned long doneDisplayStart = 0;
-const unsigned long DONE_DISPLAY_DURATION = 5000; 
+const unsigned long DONE_DISPLAY_DURATION = 4000; 
 const unsigned long DONE_FLASH_INTERVAL = 500;    
 bool showDone = false;
 bool doneVisible = false; 
@@ -67,12 +148,12 @@ String displayedInput = "";
 int timer = 0;
 
 // Start and Clear Buttons Intialization
-const int startPin = 18;
+const int startPin = 19;
 int startLastState = LOW;
 int startCurrentState;
 unsigned long lastStartPress = 0;
 
-const int clearPin = 19;
+const int clearPin = 18;
 int clearLastState = LOW;
 int clearCurrentState;
 unsigned long lastClearPress = 0;
@@ -83,12 +164,15 @@ unsigned long updateTimestamp() {
   return millis();
 }
 
-unsigned long amountOfMsElapsed(int timestamp) {
+unsigned long amountOfMsElapsed(unsigned long timestamp) {
   return millis() - timestamp;
 }
 
 unsigned long lastClockUpdate = 0; 
 
+unsigned long lastWifiCheck = 0;
+const unsigned long WIFI_CHECK_INTERVAL = FIVE_SECOND; 
+bool ntpSynced = false;  
 
 bool wifiSetup(unsigned long timeoutMs = 15000) {
   WiFi.begin(wifi_ssid, wifi_password);
@@ -110,12 +194,9 @@ bool wifiSetup(unsigned long timeoutMs = 15000) {
 
   Serial.println("\nConnected to WiFi!");
   configTzTime(TZ_EST, "pool.ntp.org", "time.nist.gov");
+  ntpSynced = true;
   return true;
 }
-
-unsigned long lastWifiCheck = 0;
-const unsigned long WIFI_CHECK_INTERVAL = FIVE_SECOND; 
-bool ntpSynced = false;  
 
 void reconnectWiFi() {
 
@@ -198,6 +279,29 @@ void updateDisplay() {
     }
 }
 
+void pauseMicrowave() {
+  turnMotorOff();
+  displayedInput = String((String(timer / 60) + ((timer % 60 < 10) ? "0" : "") + String(timer % 60)).toInt());
+  myDFPlayer.stop();
+}
+
+void updateLights() {
+  if (doorOpen == true) {
+      digitalWrite(LEDPin, HIGH);
+      if (motorIsRunning)
+      {
+        pauseMicrowave();
+      }
+      if (showDone) {
+        myDFPlayer.stop();
+      }
+    }
+  else {
+    if (!motorIsRunning) {
+      digitalWrite(LEDPin, LOW);
+    }
+  }
+}
 
 void setup()
 {
@@ -206,11 +310,13 @@ void setup()
   if (!timeSynced) {
     Serial.println("Continuing without wifi");
   }
+  dfplayerTest();
   pinMode(motorPin, OUTPUT);
   pinMode(LEDPin, OUTPUT);
   pinMode(startPin, INPUT_PULLUP);
   pinMode(clearPin, INPUT_PULLUP);
-  digitalWrite(motorPin, LOW); 
+  pinMode(latchPin, INPUT_PULLUP);
+  digitalWrite(motorPin, LOW);
   digitalWrite(LEDPin, LOW);
   display.clear();           
   display.setBrightness(DISPLAY_BRIGHTNESS); 
@@ -219,15 +325,16 @@ void setup()
 void loop() {
   reconnectWiFi();
   updateDisplay();
+  updateDoorButton();
+  updateLights();
   startCurrentState = digitalRead(startPin);
   clearCurrentState = digitalRead(clearPin);
 
   boolean startButtonPressed = (startCurrentState == LOW && startLastState == HIGH);
   boolean clearButtonPressed = (clearCurrentState == LOW && clearLastState == HIGH);
 
-
    if (!keypadInUse) {
-    if (!showDone) {
+    if (!showDone && !doorOpen) {
       if (startButtonPressed) {
         if (amountOfMsElapsed(lastStartPress) > HALF_SECOND) {
           if (!motorIsRunning) {
@@ -235,7 +342,12 @@ void loop() {
             Serial.println("Timer is: " + String(timer));
             if (timer > 0) {
               displayedInput = String(min(displayedInput.toInt(), 9959L));
+              Serial.println("Repeat?");
+              beep();
               turnMotorOn();
+              Serial.println("Reached");
+              // myDFPlayer.volume(20); // for some reason this breaks everything
+              playStatic();
               lastSecondUpdate = updateTimestamp();
             }
           }
@@ -247,18 +359,20 @@ void loop() {
 
     if (clearButtonPressed) {
       if (amountOfMsElapsed(lastClearPress) > HALF_SECOND) {
-        if (!motorIsRunning) {
-            timer = 0;
-            displayedInput = "";
-            Serial.println("Timer cleared");
-            showDone = false;
-            clockUpdate();
+        beep();
+        Serial.println("Repeating in clear");
+        if (!motorIsRunning)
+        {
+          timer = 0;
+          displayedInput = "";
+          Serial.println("Timer cleared");
+          showDone = false;
+          clockUpdate();
         }
         else
         {
           // First click: store remaining time as input
-          turnMotorOff();
-          displayedInput = String((String(timer / 60) + ((timer % 60 < 10) ? "0" : "") + String(timer % 60)).toInt());
+          pauseMicrowave();
           Serial.println("Input is: " + displayedInput);
           Serial.println("Timer stopped: " + String(timer));
         }
@@ -283,7 +397,7 @@ void loop() {
         turnMotorOff();
         displayedInput = ""; 
         Serial.println("Done");
-
+        playDoneNoise();
         showDone = true;
         doneVisible = true;          
         doneDisplayStart = millis();
@@ -295,9 +409,10 @@ void loop() {
   if (!showDone) {
     char num = numPad.getKey();
 
-    if (num != NO_KEY) {
+    if (num != NO_KEY && num != '*' && num!= '#') {
       keypadInUse = true;
-
+      Serial.println("REpeating in keypad");
+      beep();
       if (!motorIsRunning) {
         if (displayedInput.length() < 4 && !(displayedInput.length() == 0 && num == '0')) {
           displayedInput += num;
