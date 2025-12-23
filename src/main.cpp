@@ -227,20 +227,23 @@ void loop() {
 
 
    if (!keypadInUse) {
-    if (startButtonPressed) {
-      if (amountOfMsElapsed(lastStartPress) > HALF_SECOND) {
-        if (!motorIsRunning) {
-          timer = (displayedInput.toInt() / 100) * 60 + (displayedInput.toInt() % 100);
-          Serial.println("Timer is: " + String(timer));
-          if (timer > 0) {
-            displayedInput = String(min(displayedInput.toInt(), 9959L));
-            turnMotorOn();
-            lastSecondUpdate = updateTimestamp();
+    if (!showDone) {
+      if (startButtonPressed) {
+        if (amountOfMsElapsed(lastStartPress) > HALF_SECOND) {
+          if (!motorIsRunning) {
+            timer = (displayedInput.toInt() / 100) * 60 + (displayedInput.toInt() % 100);
+            Serial.println("Timer is: " + String(timer));
+            if (timer > 0) {
+              displayedInput = String(min(displayedInput.toInt(), 9959L));
+              turnMotorOn();
+              lastSecondUpdate = updateTimestamp();
+            }
           }
+          lastStartPress = updateTimestamp();
         }
-        lastStartPress = updateTimestamp();
       }
     }
+
 
     if (clearButtonPressed) {
       if (amountOfMsElapsed(lastClearPress) > HALF_SECOND) {
@@ -289,18 +292,20 @@ void loop() {
     }
   }
 
-  char num = numPad.getKey();
+  if (!showDone) {
+    char num = numPad.getKey();
 
-  if (num != NO_KEY) {
-    keypadInUse = true;
+    if (num != NO_KEY) {
+      keypadInUse = true;
 
-    if (!motorIsRunning) {
-      if (displayedInput.length() < 4 && !(displayedInput.length() == 0 && num == '0')) {
-        displayedInput += num;
+      if (!motorIsRunning) {
+        if (displayedInput.length() < 4 && !(displayedInput.length() == 0 && num == '0')) {
+          displayedInput += num;
+        }
+        Serial.println("The current input is: " + displayedInput);
       }
-      Serial.println("The current input is: " + displayedInput);
-    }
-  } else {
-    keypadInUse = false;
+    } else {
+      keypadInUse = false;
+    } 
   }
 }
