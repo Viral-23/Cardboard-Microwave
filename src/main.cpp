@@ -148,12 +148,12 @@ String displayedInput = "";
 int timer = 0;
 
 // Start and Clear Buttons Intialization
-const int startPin = 18;
+const int startPin = 19;
 int startLastState = LOW;
 int startCurrentState;
 unsigned long lastStartPress = 0;
 
-const int clearPin = 19;
+const int clearPin = 18;
 int clearLastState = LOW;
 int clearCurrentState;
 unsigned long lastClearPress = 0;
